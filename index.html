@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduAttend - Sistem Absensi Cloud</title>
+    
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #6c5ce7;
+            --secondary: #a29bfe;
+            --bg-body: #f1f2f6;
+            --surface: #ffffff;
+            --text: #2d3436;
+            --text-light: #636e72;
+            --border: #dfe6e9;
+            --danger: #ff7675;
+            --success: #00b894;
+            --radius: 16px;
+            --sidebar-width: 260px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        body { background-color: var(--bg-body); color: var(--text); overflow-x: hidden; }
+
+        .app-container { display: flex; min-height: 100vh; }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 1.5rem;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+
+        .logo { font-size: 1.5rem; font-weight: 700; color: var(--primary); margin-bottom: 2rem; display: flex; align-items: center; gap: 10px; }
+
+        .nav-menu { list-style: none; }
+        .nav-item {
+            padding: 0.8rem 1rem;
+            border-radius: 12px;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-light);
+            font-weight: 500;
+        }
+        .nav-item:hover { background: var(--bg-body); color: var(--primary); }
+        .nav-item.active { background: var(--primary); color: white; }
+
+        /* Main Content */
+        .main-content { flex: 1; margin-left: var(--sidebar-width); padding: 2rem; }
+        .header-content { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+
+        /* Status Online/Offline */
+        .cloud-status {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #ffeaa7;
+        }
+        .cloud-status.online { background: #55efc4; }
+
+        /* Cards */
+        .card { background: var(--surface); border-radius: var(--radius); padding: 1.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
+
+        .btn { padding: 0.6rem 1.2rem; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; transition: 0.3s; font-size: 0.9rem; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { border: 1px solid var(--border); background: transparent; }
+        .btn-danger { background: var(--danger); color: white; }
+
+        /* Loading */
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.8); display: none;
+            justify-content: center; align-items: center; z-index: 9999; flex-direction: column; gap: 10px;
+        }
+        .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Attendance Pills */
+        .attendance-pills { display: flex; gap: 5px; }
+        .pill { flex: 1; padding: 0.5rem; text-align: center; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; font-size: 0.8rem; font-weight: 700; }
+        .pill.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+        /* Tables */
+        .table-responsive { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th { text-align: left; padding: 1rem; border-bottom: 2px solid var(--bg-body); color: var(--text-light); font-size: 0.85rem; }
+        td { padding: 1rem; border-bottom: 1px solid var(--bg-body); }
+
+        .form-control { width: 100%; padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border); outline: none; }
+        .hidden { display: none; }
+
+        @media (max-width: 768px) {
+            .sidebar { transform: translateX(-100%); }
+            .sidebar.show { transform: translateX(0); }
+            .main-content { margin-left: 0; padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <p id="loading-text">Menghubungkan ke Cloud...</p>
+    </div>
+
+    <div class="app-container">
+        <aside class="sidebar" id="sidebar">
+            <div class="logo"><i class="fas fa-graduation-cap"></i> EduAttend</div>
+            <ul class="nav-menu">
+                <li class="nav-item active" onclick="navigateTo('students')"><i class="fas fa-users"></i> Data Siswa</li>
+                <li class="nav-item" onclick="navigateTo('attendance')"><i class="fas fa-clipboard-check"></i> Absensi</li>
+                <li class="nav-item" onclick="navigateTo('reports')"><i class="fas fa-chart-line"></i> Laporan</li>
+            </ul>
+            <div style="margin-top: auto; font-size: 0.7rem; color: var(--text-light)">
+                Status: <span id="status-tag" class="cloud-status">Cloud Terhubung</span>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <!-- Data Siswa -->
+            <section id="page-students" class="page-section">
+                <div class="header-content">
+                    <h2>Manajemen Siswa</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-outline" onclick="document.getElementById('import-input').click()"><i class="fas fa-file-import"></i> Import</button>
+                        <input type="file" id="import-input" class="hidden" accept=".xlsx" onchange="handleImport(event)">
+                        <button class="btn btn-primary" onclick="openModal()"><i class="fas fa-plus"></i> Tambah</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>No</th>
+                                    <th>NISN</th>
+                                    <th>Nama</th>
+                                    <th>Kelas</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="student-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Absensi -->
+            <section id="page-attendance" class="page-section hidden">
+                <div class="header-content">
+                    <h2>Rekam Absensi</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="date" id="att-date" class="form-control" style="width: 160px;">
+                        <select id="att-class" class="form-control" style="width: 140px;" onchange="loadAttendanceList()"></select>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Nama Siswa</th>
+                                    <th>Status (H/S/I/A)</th>
+                                    <th>Catatan</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendance-list"></tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top: 1.5rem; text-align: right;">
+                        <button class="btn btn-primary" onclick="saveToCloud()"><i class="fas fa-cloud-upload-alt"></i> Kirim ke Google Sheets</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Laporan -->
+            <section id="page-reports" class="page-section hidden">
+                <div class="header-content"><h2>Laporan Rekapitulasi</h2></div>
+                <div class="card">
+                    <button class="btn btn-primary" onclick="exportExcel()"><i class="fas fa-file-excel"></i> Download Excel</button>
+                    <div id="report-container"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal Tambah Siswa -->
+    <div class="modal-overlay" id="modal" style="display:none">
+        <div class="modal-card">
+            <h3>Input Data Siswa</h3>
+            <div style="margin-top:1rem">
+                <input type="text" id="s-name" class="form-control" placeholder="Nama Lengkap" style="margin-bottom:10px">
+                <input type="text" id="s-nisn" class="form-control" placeholder="NISN" style="margin-bottom:10px">
+                <input type="text" id="s-class" class="form-control" placeholder="Kelas">
+                <div style="margin-top:1.5rem; text-align:right">
+                    <button class="btn btn-outline" onclick="closeModal()">Batal</button>
+                    <button class="btn btn-primary" onclick="addStudent()">Simpan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- KONFIGURASI API KAMU ---
+        const API_URL = "https://script.google.com/macros/s/AKfycby4FO9YlM3tAVDuSdMR2zGU_QKujtTV_4rKvOBRBBZ1ybW7sflLWNsfLyY8TKlKacaGVA/exec";
+
+        let state = {
+            students: JSON.parse(localStorage.getItem('edu_students')) || [],
+            attendance: JSON.parse(localStorage.getItem('edu_attendance')) || {}
+        };
+
+        window.onload = () => {
+            renderStudents();
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('att-date').value = today;
+            updateStatus();
+        };
+
+        function updateStatus() {
+            const tag = document.getElementById('status-tag');
+            if (API_URL) {
+                tag.classList.add('online');
+                tag.innerText = "Cloud Active";
+            }
+        }
+
+        function navigateTo(page) {
+            document.querySelectorAll('.page-section').forEach(s => s.classList.add('hidden'));
+            document.getElementById(`page-${page}`).classList.remove('hidden');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            if(page === 'attendance') populateClasses();
+        }
+
+        function renderStudents() {
+            const list = document.getElementById('student-list');
+            list.innerHTML = state.students.map((s, i) => `
+                <tr>
+                    <td>${i+1}</td>
+                    <td>${s.nisn}</td>
+                    <td><strong>${s.name}</strong></td>
+                    <td>${s.class}</td>
+                    <td><button onclick="removeStudent('${s.id}')" style="color:red; border:none; background:none; cursor:pointer"><i class="fas fa-trash"></i></button></td>
+                </tr>
+            `).join('');
+            localStorage.setItem('edu_students', JSON.stringify(state.students));
+        }
+
+        function openModal() { document.getElementById('modal').style.display='flex'; }
+        function closeModal() { document.getElementById('modal').style.display='none'; }
+
+        function addStudent() {
+            const name = document.getElementById('s-name').value;
+            const nisn = document.getElementById('s-nisn').value;
+            const cls = document.getElementById('s-class').value;
+            if(!name || !nisn) return alert("Isi data!");
+            state.students.push({ id: Date.now().toString(), name, nisn, class: cls });
+            renderStudents();
+            closeModal();
+        }
+
+        function removeStudent(id) {
+            state.students = state.students.filter(s => s.id !== id);
+            renderStudents();
+        }
+
+        function populateClasses() {
+            const classes = [...new Set(state.students.map(s => s.class))];
+            const select = document.getElementById('att-class');
+            select.innerHTML = '<option value="">Pilih Kelas</option>' + classes.map(c => `<option value="${c}">${c}</option>`).join('');
+        }
+
+        function loadAttendanceList() {
+            const cls = document.getElementById('att-class').value;
+            if(!cls) return;
+            const filtered = state.students.filter(s => s.class === cls);
+            const list = document.getElementById('attendance-list');
+            list.innerHTML = filtered.map(s => `
+                <tr data-sid="${s.id}">
+                    <td>${s.name}</td>
+                    <td>
+                        <div class="attendance-pills">
+                            <div class="pill active" onclick="selPill(this)">H</div>
+                            <div class="pill" onclick="selPill(this)">S</div>
+                            <div class="pill" onclick="selPill(this)">I</div>
+                            <div class="pill" onclick="selPill(this)">A</div>
+                        </div>
+                    </td>
+                    <td><input type="text" class="form-control note" placeholder="..."></td>
+                </tr>
+            `).join('');
+        }
+
+        function selPill(el) {
+            el.parentElement.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+            el.classList.add('active');
+        }
+
+        async function saveToCloud() {
+            const date = document.getElementById('att-date').value;
+            const rows = document.querySelectorAll('#attendance-list tr');
+            if(!rows.length) return alert("Pilih kelas dulu!");
+
+            let attendanceData = {};
+            rows.forEach(r => {
+                const sid = r.dataset.sid;
+                const status = r.querySelector('.pill.active').innerText;
+                const note = r.querySelector('.note').value;
+                attendanceData[sid] = { status, note };
+            });
+
+            setLoading(true, "Mengirim ke Google Sheets...");
+
+            try {
+                // Menggunakan fetch untuk mengirim data ke Google Apps Script
+                await fetch(API_URL, {
+                    method: "POST",
+                    mode: "no-cors", // Penting untuk Google Apps Script
+                    cache: "no-cache",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ date, data: attendanceData })
+                });
+                
+                alert("Berhasil! Data telah dikirim ke Google Sheets kamu.");
+            } catch (e) {
+                alert("Terjadi kesalahan koneksi!");
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function setLoading(show, text) {
+            document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
+            document.getElementById('loading-text').innerText = text;
+        }
+
+        function handleImport(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const wb = XLSX.read(evt.target.result, { type: 'binary' });
+                const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                data.forEach(r => {
+                    state.students.push({ id: Math.random().toString(), name: r.Nama, nisn: r.NISN, class: r.Kelas });
+                });
+                renderStudents();
+                alert("Import Selesai!");
+            };
+            reader.readAsBinaryString(file);
+        }
+
+        function exportExcel() {
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(state.students);
+            XLSX.utils.book_append_sheet(wb, ws, "Siswa");
+            XLSX.writeFile(wb, "Data_EduAttend.xlsx");
+        }
+    </script>
+</body>
+</html>
